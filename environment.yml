@@ -1,0 +1,19 @@
+# Reproducible environment.  quantum_sensing is installed separately (see requirements.txt).
+#   conda env create -f environment.yml
+#   conda activate backaction-support
+name: backaction-support
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy>=2.0,<2.3
+  - scipy>=1.13
+  - pandas>=2.0
+  - h5py
+  - matplotlib>=3.7
+  - pytest>=7.0
+  - jupyterlab
+  - ipykernel
+  - pip
+  - pip:
+      - -r requirements.txt

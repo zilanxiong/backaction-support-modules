@@ -1,0 +1,9 @@
+# Installs the support modules (backaction_qfi) in editable mode plus what they need.
+#
+# The group's quantum_sensing package is NOT in this repo and must be importable
+# in the same environment.  Either of:
+#   pip install -e /path/to/ligo-backaction-qfi            # the study repo's vendored copy
+#   pip install "quantum-sensing @ git+https://github.com/shruti-jm/quantum-sensing.git#subdirectory=python"
+-e .
+matplotlib>=3.7
+pytest>=7.0
