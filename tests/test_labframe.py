@@ -82,3 +82,6 @@ def test_device_switch():
     psi = b.make_probe("cat", 60, 2)
     assert rp_qfi_labframe(psi, kappa_ba=0.5, eta_ch=0.9, device="gpu") == pytest.approx(
         rp_qfi_labframe(psi, kappa_ba=0.5, eta_ch=0.9), rel=1e-8)
+    # the case where cuSOLVER's eigh returned NaN on an H200 (coherent probe, 1 kHz): host fallback
+    psi = b.make_probe("coherent", 160, 5)
+    assert rp_qfi_labframe(psi, kappa_ba=1.6e-4, device="gpu") == pytest.approx(4.0, rel=1e-8)

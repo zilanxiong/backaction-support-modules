@@ -221,13 +221,27 @@ class LabFrameChannel:
         return 0.5 * (rho + rho.conj().T), 0.5 * (sig + sig.conj().T)
 
 
+def _eigh(rho, xp):
+    """Hermitian eigendecomposition on the device, with a host fallback: on an H200 with
+    CuPy 14.2 / CUDA 12.9, cuSOLVER returned NaN eigenvalues for a pure, nearly real
+    rank-one state (coherent probe, kappa ~ 1e-4) while the state itself was fine."""
+    vals, vecs = xp.linalg.eigh(rho)
+    if xp is not np and not bool(xp.isfinite(vals).all()):
+        v, w = np.linalg.eigh(rho.get())
+        vals, vecs = xp.asarray(v), xp.asarray(w)
+    return vals, vecs
+
+
 def qfi_from_rho_drho(rho, drho, prec_eig=1e-8, xp=np):
     """Package formula: sum_{ij} 2 |<i|drho|j>|² / (p_i + p_j) over p_i + p_j > prec_eig."""
-    vals, vecs = xp.linalg.eigh(rho)
+    vals, vecs = _eigh(rho, xp)
     d = vecs.conj().T @ drho @ vecs
     denom = vals[:, None] + vals[None, :]
     mask = xp.abs(denom) > prec_eig
-    return float(xp.sum(xp.where(mask, 2.0 * xp.abs(d) ** 2 / xp.where(mask, denom, 1.0), 0.0)).real)
+    qfi = float(xp.sum(xp.where(mask, 2.0 * xp.abs(d) ** 2 / xp.where(mask, denom, 1.0), 0.0)).real)
+    if not np.isfinite(qfi):
+        raise RuntimeError("QFI is not finite after the eigen-sum")
+    return qfi
 
 
 def channel_labframe(rho, *, N_basis=None, device="cpu", rtol=1e-8, atol=1e-10, **channel):
