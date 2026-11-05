@@ -41,7 +41,10 @@ cases = [("squeezed", dict(eta_ch=0.95)), ("coherent", {}), ("cat", dict(eta_ch=
 # default, qutip's expect()/operator constructors route kets through the GPU operator type,
 # which only accepts square matrices -------------------------------------------------------
 probes = {probe: make_probe(probe, 200, 5) for probe, _ in cases}
-psi10 = make_probe("squeezed", 400, 5)
+# the package wants the probe at the channel's cutoff (no zero-padding): build the 10 Hz
+# probes at their cutoffs now, by padding a 400-level ket (its population beyond 400 is nil)
+_psi400 = make_probe("squeezed", 400, 5).full()
+psi10 = {N: qt.Qobj(np.pad(_psi400, ((0, N - 400), (0, 0)))) for N in (1000, 2000)}
 
 # --- CPU reference first (standard QuTiP) ------------------------------------------
 ref = {}
@@ -74,7 +77,7 @@ k10 = float(qs.rp_kappa(2 * np.pi * 10.0))
 for N in (1000, 2000):
     t0 = time.perf_counter()
     try:
-        F = package_qfi(psi10, N, kappa_ba=k10, eta_ch=0.95)
+        F = package_qfi(psi10[N], N, kappa_ba=k10, eta_ch=0.95)
         print(f"[gpu] squeezed 10 Hz eta_ch=0.95 N={N}: QFI = {F:.5f}   {time.perf_counter() - t0:.0f}s  "
               f"(converged value ~2.40; lab-frame port gave 2.09 at 1332 and 2.24 at 1865)", flush=True)
     except Exception as err:
