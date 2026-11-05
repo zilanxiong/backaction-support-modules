@@ -14,6 +14,8 @@ Physical stack with 200 mrad phase noise:
 One job per probe (parallel GPUs; each probe writes its own CSV, merge with pandas):
     for f in "Squeezed vac." Coherent "Even cat" "Squeezed cat" Fock; do
         sbatch scripts/sweep_gpu.slurm --tag backaction_only --families "$f"; done
+Same sweep through the package's own channel and QFI (GPU via qutip-cuquantum), one job per probe:
+    sbatch scripts/sweep_gpu.slurm --tag channel_loss_eta0p95 --eta-ch 0.95 --engine package --families Fock
 Timing check only (three frequencies, squeezed vacuum):
     python scripts/sweep_labframe.py --tag timing --eta-ch 0.95 --freqs 100 31.6 10 --families "Squeezed vac."
 """
@@ -72,12 +74,20 @@ def extrapolate(history):
     return f3 + tail, abs(tail / (f3 + tail))
 
 
-def converged_point(psi, kappa, ladder, device, rtol, channel, solver_rtol, solver_atol):
+def qfi_point(psi, kappa, N, device, channel, solver_rtol, solver_atol, engine, padded):
+    if engine == "port":
+        return rp_qfi_labframe(psi, kappa_ba=kappa, N_basis=N, device=device,
+                               rtol=solver_rtol, atol=solver_atol, **channel)
+    # the package wants the probe at the channel's cutoff: use the pre-padded ket
+    return qs.calculate_qfi(dynamics=qs.get_state_single_mode_rp, param_type="epsilon_a",
+                            rho=padded[N], kappa_ba=kappa, N_basis=N, **channel)
+
+
+def converged_point(psi, kappa, ladder, device, rtol, channel, solver_rtol, solver_atol, engine="port", padded=None):
     history = []
     for N in ladder:
         t0 = time.perf_counter()
-        F = rp_qfi_labframe(psi, kappa_ba=kappa, N_basis=N, device=device,
-                            rtol=solver_rtol, atol=solver_atol, **channel)
+        F = qfi_point(psi, kappa, N, device, channel, solver_rtol, solver_atol, engine, padded)
         history.append((N, F, time.perf_counter() - t0))
         if not np.isfinite(F) or F <= 0.0:
             raise RuntimeError(f"suspicious QFI {F!r} at N={N}, kappa={kappa}, {channel}: ladder so far {history}")
@@ -88,6 +98,11 @@ def converged_point(psi, kappa, ladder, device, rtol, channel, solver_rtol, solv
             if remaining == remaining and remaining < rtol:        # extrapolated tail below rtol
                 return F, N, True, history
     return F, N, False, history
+
+
+def solver_atol_pkg(args):
+    # finite differences with step 1e-5 need tighter tolerances than the sensitivity equation
+    return min(args.solver_atol, 1e-12)
 
 
 def main():
@@ -101,6 +116,9 @@ def main():
     ap.add_argument("--freqs", type=float, nargs="*", default=None, help="Hz; default 25 log-spaced 10–1000")
     ap.add_argument("--families", nargs="*", default=list(FAMILIES), help=f"subset of {list(FAMILIES)}")
     ap.add_argument("--device", choices=["auto", "gpu", "cpu"], default="auto")
+    ap.add_argument("--engine", choices=["port", "package"], default="port",
+                    help="port: backaction_qfi.labframe (NumPy/CuPy, sensitivity equation); "
+                         "package: quantum_sensing's own channel + calculate_qfi, on GPU via qutip-cuquantum")
     ap.add_argument("--rtol", type=float, default=1e-3, help="ladder convergence criterion")
     ap.add_argument("--rungs", type=int, default=6, help="ladder length (top rung = N0 * 1.4^(rungs-1))")
     ap.add_argument("--solver-rtol", type=float, default=1e-8, help="DOP853 relative tolerance")
@@ -127,6 +145,34 @@ def main():
     print(f"channel {channel}  nbar {args.nbar}  {len(todo)} points to do, {len(done)} already in {csv_path}", flush=True)
 
     probes = {label: make_probe(FAMILIES[label], args.n_probe, args.nbar) for label in args.families}
+    padded = {}
+    if args.engine == "package":
+        import types, qutip as qt, quantum_sensing.dynamics as dyn
+        # every cutoff the ladders can reach, as zero-padded kets, built BEFORE the GPU
+        # backend becomes the default dtype (it rejects rectangular kets)
+        cutoffs = sorted({N for f in freqs for N in cutoff_ladder(float(qs.rp_kappa(2 * np.pi * f)), args.rungs)})
+        for label, psi in probes.items():
+            v = psi.full()
+            padded[label] = {N: qt.Qobj(np.pad(v, ((0, max(N - v.shape[0], 0)), (0, 0)))[:N]) for N in cutoffs}
+        # the package passes no solver settings: inject tolerances / step budget into its mesolve calls
+        opts = dict(atol=solver_atol_pkg(args), rtol=args.solver_rtol, nsteps=1_000_000)
+
+        class _QT(types.ModuleType):
+            def __getattr__(self, name):
+                return getattr(qt, name)
+
+            def mesolve(self, *a, **kw):
+                kw.setdefault("options", {}).update({k: v for k, v in opts.items() if k not in kw["options"]})
+                return qt.mesolve(*a, **kw)
+
+        dyn.qt = _QT("qutip")
+        if device == "gpu":
+            import qutip_cuquantum
+            from cuquantum.densitymat import WorkStream
+            qutip_cuquantum.set_as_default(WorkStream())
+            print("engine: package channel on GPU via qutip-cuquantum (CuVern7)", flush=True)
+        else:
+            print("engine: package channel on CPU", flush=True)
     with open(csv_path, "a", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=FIELDS)
         if not done:
@@ -135,7 +181,8 @@ def main():
             kappa = float(qs.rp_kappa(2 * np.pi * f))
             ladder = cutoff_ladder(kappa, args.rungs)
             F, N, ok, hist = converged_point(probes[label], kappa, ladder, device, args.rtol, channel,
-                                             args.solver_rtol, args.solver_atol)
+                                             args.solver_rtol if args.engine == "port" else min(args.solver_rtol, 1e-10),
+                                             args.solver_atol, args.engine, padded.get(label))
             F_ex, _ = extrapolate(hist)
             row = dict(family=label, freq_hz=float(f), kappa_ba=kappa, qfi=F, qfi_extrap=F_ex, cutoff=N, converged=ok,
                        seconds=round(sum(h[2] for h in hist), 1),
