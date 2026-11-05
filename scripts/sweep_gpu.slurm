@@ -4,9 +4,8 @@
 #   sbatch scripts/sweep_gpu.slurm --tag channel_loss_eta0p95 --eta-ch 0.95
 #
 # Everything after the script name is passed to scripts/sweep_labframe.py.
-# Before the first submission, confirm the GPU resource name on the cluster with
-#     sinfo -p gpu -o "%N %G"
-# and the H200 pool (18 nodes) is the default; --gres=gpu:h100:1 on the command line overrides it.
+# The H200 pool (18 nodes) is the default GPU; --gres=gpu:h100:1 on the sbatch command line
+# overrides it. GPU resource names on the cluster: sinfo -p gpu -o "%N %G"
 #
 #SBATCH --job-name=qfi-sweep
 #SBATCH --account=ligo-controls
