@@ -19,6 +19,7 @@ which is **not** included here and must be installed in the same environment
 | `backaction_qfi/labframe.py` | the package channel integrated **in the lab frame** on NumPy (`device="cpu"`) or CuPy (`device="gpu"`): the Python counterpart of the group's Julia CUDA extension. Same three stages, same parameter conversions, same QFI formula; the derivative is integrated alongside the state (no finite difference) with a DOP853 integrator that applies `a`, `a†` as shifts, so no `N²×N²` generator is formed. `rp_qfi_labframe(psi, kappa_ba=..., eta_in=..., pn_in=..., eta_ch=..., eta_out=..., device="gpu")`. Lab-frame cutoffs grow with kappa (hundreds of levels at kappa ~ 1–3, over a thousand at 10 Hz); on a GPU that is minutes per point |
 | `backaction_qfi/convergence.py` | Fock-cutoff ladder (`converged_qfi`, `converge`) and the truncation alarm (`tail_population`) |
 | `data/optimised_states/` | the group's optimised probes (`states.h5.gz`, unpacked on first use) and the orientation notes |
+| `scripts/sweep_labframe.py` | QFI-vs-frequency sweep through the package channel in the lab frame (GPU when CuPy is present), one CSV row per point with a cutoff ladder and a convergence flag; resumes from its own CSV. `scripts/sweep_gpu.slurm` submits it as a Slurm batch job on one GPU: `sbatch scripts/sweep_gpu.slurm --tag channel_loss_eta0p95 --eta-ch 0.95` |
 | `tests/` | package import smoke tests, the convergence suite, the Gaussian benchmark suite, the optimised-state loader checks |
 
 ## Set up

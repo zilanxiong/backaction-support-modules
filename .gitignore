@@ -6,3 +6,4 @@ __pycache__/
 .venv/
 # unpacked on first use from states.h5.gz
 data/optimised_states/states.h5
+logs/
