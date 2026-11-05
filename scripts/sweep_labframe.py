@@ -79,7 +79,9 @@ def converged_point(psi, kappa, ladder, device, rtol, channel, solver_rtol, solv
         F = rp_qfi_labframe(psi, kappa_ba=kappa, N_basis=N, device=device,
                             rtol=solver_rtol, atol=solver_atol, **channel)
         history.append((N, F, time.perf_counter() - t0))
-        if len(history) >= 2 and abs(history[-1][1] / history[-2][1] - 1) < rtol:
+        if not np.isfinite(F) or F <= 0.0:
+            raise RuntimeError(f"suspicious QFI {F!r} at N={N}, kappa={kappa}, {channel}: ladder so far {history}")
+        if len(history) >= 2 and abs(history[-1][1] - history[-2][1]) <= rtol * abs(history[-1][1]):
             return F, N, True, history
         if len(history) >= 3:
             _, remaining = extrapolate(history)

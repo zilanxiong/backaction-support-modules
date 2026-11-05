@@ -213,6 +213,11 @@ class LabFrameChannel:
         if g_out:
             y = self.integrate(self.make_rhs(gamma=g_out, with_sensitivity=True), y, 1.0)
         rho, sig = y[0], y[1]
+        tr = float(xp.trace(rho).real)
+        finite = bool(xp.isfinite(rho).all()) and bool(xp.isfinite(sig).all())
+        if not finite or not np.isfinite(tr) or abs(tr - 1.0) > 1e-6:
+            raise RuntimeError(f"lab-frame channel: trace(rho_out) = {tr!r}, finite = {finite} on {self.device} "
+                               f"at N={self.N} (kappa_ba={kappa_ba}, steps={getattr(self, 'last_steps', None)})")
         return 0.5 * (rho + rho.conj().T), 0.5 * (sig + sig.conj().T)
 
 
