@@ -6,13 +6,13 @@
 # Everything after the script name is passed to scripts/sweep_labframe.py.
 # Before the first submission, confirm the GPU resource name on the cluster with
 #     sinfo -p gpu -o "%N %G"
-# and adjust the --gres line if the H100 is listed under a different name.
+# and the H200 pool (18 nodes) is the default; --gres=gpu:h100:1 on the command line overrides it.
 #
 #SBATCH --job-name=qfi-sweep
 #SBATCH --account=ligo-controls
 #SBATCH --partition=gpu
 #SBATCH --qos=normal
-#SBATCH --gres=gpu:h100:1
+#SBATCH --gres=gpu:nvidia_h200:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=24:00:00
