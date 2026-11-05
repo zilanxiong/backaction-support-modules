@@ -37,11 +37,17 @@ k31 = float(qs.rp_kappa(2 * np.pi * 31.6))
 cases = [("squeezed", dict(eta_ch=0.95)), ("coherent", {}), ("cat", dict(eta_ch=0.95, pn_in=0.2)),
          ("fock", dict(eta_in=0.95, pn_in=0.2, eta_ch=0.99, eta_out=0.9))]
 
+# --- build every probe BEFORE the backend is switched on: with the backend as the global
+# default, qutip's expect()/operator constructors route kets through the GPU operator type,
+# which only accepts square matrices -------------------------------------------------------
+probes = {probe: make_probe(probe, 200, 5) for probe, _ in cases}
+psi10 = make_probe("squeezed", 400, 5)
+
 # --- CPU reference first (standard QuTiP) ------------------------------------------
 ref = {}
 for probe, ch in cases:
-    psi = make_probe(probe, 200, 5); t0 = time.perf_counter()
-    ref[probe] = package_qfi(psi, 200, kappa_ba=k31, **ch)
+    t0 = time.perf_counter()
+    ref[probe] = package_qfi(probes[probe], 200, kappa_ba=k31, **ch)
     print(f"[cpu] {probe:9s} {ch}  QFI = {ref[probe]:.7f}   {time.perf_counter() - t0:.1f}s", flush=True)
 
 # --- switch the backend on -----------------------------------------------------------
@@ -55,21 +61,20 @@ print("backend on: default_dtype =", qt.settings.core["default_dtype"],
       "| MESolver method =", qt.MESolver.solver_options.get("method") if hasattr(qt.MESolver, "solver_options") else "?", flush=True)
 
 # what does the package's channel return now?
-psi = make_probe("coherent", 200, 5)
-out = qs.get_state_single_mode_rp(rho=psi, kappa_ba=k31, N_basis=200, eta_ch=0.95)
+out = qs.get_state_single_mode_rp(rho=probes["coherent"], kappa_ba=k31, N_basis=200, eta_ch=0.95)
 print("channel output dtype with backend on:", out.dtype.__name__, flush=True)
 
 for probe, ch in cases:
-    psi = make_probe(probe, 200, 5); t0 = time.perf_counter()
-    F = package_qfi(psi, 200, kappa_ba=k31, **ch)
+    t0 = time.perf_counter()
+    F = package_qfi(probes[probe], 200, kappa_ba=k31, **ch)
     print(f"[gpu] {probe:9s} {ch}  QFI = {F:.7f}   rel. diff vs cpu {F / ref[probe] - 1:+.2e}   {time.perf_counter() - t0:.1f}s", flush=True)
 
 # --- timing at 10 Hz with channel loss, two cutoffs ----------------------------------
 k10 = float(qs.rp_kappa(2 * np.pi * 10.0))
 for N in (1000, 2000):
-    psi = make_probe("squeezed", 400, 5); t0 = time.perf_counter()
+    t0 = time.perf_counter()
     try:
-        F = package_qfi(psi, N, kappa_ba=k10, eta_ch=0.95)
+        F = package_qfi(psi10, N, kappa_ba=k10, eta_ch=0.95)
         print(f"[gpu] squeezed 10 Hz eta_ch=0.95 N={N}: QFI = {F:.5f}   {time.perf_counter() - t0:.0f}s  "
               f"(converged value ~2.40; lab-frame port gave 2.09 at 1332 and 2.24 at 1865)", flush=True)
     except Exception as err:
